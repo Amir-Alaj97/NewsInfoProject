@@ -10,6 +10,9 @@ from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema.output_parser import StrOutputParser
 import concurrent.futures
+import re
+from datetime import datetime
+from word2number import w2n
 
 load_dotenv()
 
@@ -81,35 +84,73 @@ def make_request(news, category):
     if news["name"] == "NewsApi":
         response = requests.get(news["url"], params)
         articles = response.json().get("articles", [])
-        return '\n\n'.join([f"Author: {article['author']}\nTitle: {article['title']}\nPublished At: {article['publishedAt']}\nContent: {article['content']}\nCategory: {category}\nApiSource: {news['name']}" for article in articles])
+        return '\n\n'.join([f'''Author: {article['author']}\nTitle: {article['title']}\nPublished At: {article['publishedAt']}
+                            \nContent: {article['content']}\nCategory: {category}\nApiSource: {news['name']}\n''' for article in articles])
     elif news["name"] == "MediaStack":
         response = requests.get(news["url"], params)
         articles = response.json().get("data", [])
-        return '\n\n'.join([f"Author: {article['author']}\nTitle: {article['title']}\nPublished At: {article['published_at']}\nContent: {article['description']}\nCategory: {category}\nApiSource: {news['name']}" for article in articles])
+        return '\n\n'.join([f'''Author: {article['author']}\nTitle: {article['title']}\nPublished At: {article['published_at']}
+                            \nContent: {article['description']}\nCategory: {category}\nApiSource: {news['name']}\n''' for article in articles])
     elif news["name"] == "GNews":
         response = requests.get(news["url"], params)
         articles = response.json().get("articles", [])
-        return '\n\n'.join([f"Author: {article['source']['name']}\nTitle: {article['title']}\nPublished At: {article['publishedAt']}\nContent: {article['content']}\nCategory: {category}\nApiSource: {news['name']}" for article in articles])
+        return '\n\n'.join([f'''Author: {article['source']['name']}\nTitle: {article['title']}\nPublished At: {article['publishedAt']}
+                            \nContent: {article['content']}\nCategory: {category}\nApiSource: {news['name']}\n''' for article in articles])
 
-def fetch_news(news):
+def fetch_news(news, categories):
     combinedArticles = ""
+    if len(categories) == 0:
+        categories = CATEGORIES
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(make_request, news, category) for category in CATEGORIES]
+        futures = [executor.submit(make_request, news, category) for category in categories]
         for future in concurrent.futures.as_completed(futures):
             combinedArticles += future.result() + '\n\n'
     return combinedArticles
 
 def process_request(userInput):
-    combinedArticles = ""
+    categories = findCategory(userInput)
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        futures = [executor.submit(fetch_news, news) for news in NEWS_APIS]
+        futures = [executor.submit(fetch_news, news, categories) for news in NEWS_APIS]
         for future in concurrent.futures.as_completed(futures):
             combinedArticles += future.result() + '\n\n'
     summary = invoke_articles(combinedArticles, userInput)
     return summary
     
-    
-    
+def findCategory(userInput):
+    filteredCategories = [category for category in CATEGORIES if category in userInput]
+    return filteredCategories
+
+def findDates(userInput):
+    dateNumPattern = '''(\b(?:\d{1,2}[-/]){1}\d{1,2}[-/]\d{4}\b|\b\d{4}[-/]\d{2}[-/]\d{2}\b)'''
+    dateWordPattern = r'''((?:[january|february|march|april|may|june|july|august|september|october|november|december]+(?:\s\d{1,2})(?:st|nd|rd|th)?,\s\d{4})|
+    \b(?:[january|february|march|april|may|june|july|august|september|october|november|december]+(?:\s\d{1,2})(?:st|nd|rd|th)?))'''
+    dateNumMatches = re.match(dateNumPattern, userInput)
+    dateWordMatches = re.match(dateWordPattern, userInput.lower())
+    matches = dateNumMatches + dateWordMatches
+    if len(matches) == 0:
+        if "today" in userInput:
+            return None, None
+        daysAgoPattern = r'(\d+|\b\w+\b) (days|day) ago'
+        daysAgoMatch = re.match(daysAgoPattern, userInput)
+        if daysAgoMatch[0].isnumeric():
+            fromDate = (datetime.today() - timedelta(days=int(daysAgoMatch[0]))).strftime("%Y-%m-%d")
+            return fromDate, None
+        else:
+            try:
+                daysAgo = w2n.word_to_num(daysAgoMatch[0])
+            except Exception as e:
+                if daysAgoMatch[0].lower() == "a":
+                    daysAgo = 1
+                elif daysAgoMatch[0].lower() == "couple":
+                    daysAgo = 2
+                elif daysAgoMatch[0].lower() == "few":
+                    daysAgo = 3
+                else:
+                    return None, None
+            fromDate = (datetime.today() - timedelta(days=daysAgo)).strftime("%Y-%m-%d")
+    elif len(dateNumMatches) == 1:
+        print('''CONTINUE FROM HERE''')
+        
 
 def main():
     print("This is the News Summarizer")

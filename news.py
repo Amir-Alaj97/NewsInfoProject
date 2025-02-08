@@ -11,8 +11,8 @@ from langchain.prompts import ChatPromptTemplate
 from langchain.schema.output_parser import StrOutputParser
 
 def store_articles(articles, prompt):
-    articlesText = '\n'.join([f"Author: {article['author']}\nTitle: {article['title']}\nDescription: {article['description']}\nPublished At: {article['publishedAt']}\nContent: {article['content']}\n" for article in articles])
-
+    articlesText = '\n'.join([f'''Author: {article['author']}\nTitle: {article['title']}\nDescription: {article['description']}
+                                \nPublished At: {article['publishedAt']}\nContent: {article['content']}\n''' for article in articles])
     model = ChatOpenAI(model="gpt-4o")
 
     prompt_template = ChatPromptTemplate.from_messages(
